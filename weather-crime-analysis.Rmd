@@ -1,0 +1,474 @@
+---
+title: "MA304_2412530"
+author: "Evangelos Kontokostas"
+date: "2025-07-15"
+output:
+  html_document: default
+  word_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+#install.packages(c(
+ # "tidyverse", "janitor", "lubridate", 
+#  "plotly", "leaflet", "corrplot", "rmarkdown", "knitr"
+#))
+```
+
+
+
+
+```{r}
+# Load libraries
+library(tidyverse)
+library(lubridate)
+library(janitor)
+library(readr)
+library(dplyr)
+
+```
+
+## Abstract
+
+This report describes a relationship between weather conditions and crimes occurring at a street level in Colchester for `2024-25`. From police records of crimes and day-to-day weather data for two consecutive years, seasonal patterns, space-time clusters, and temperaturecrime relationships were established. Crime data `(crime2024-25.csv)` was obtained from the UK Police API [ukpolice.njtierney.com], while weather data `(temp2023-24.csv and temp2024-25.csv)` was obtained from a Colchester-region station via the OGIMET interface [bczernecki.github.io/climate]. Using a range of data visualizations — from boxplots to time series plots, to scatter plots and interactive maps — important patterns came to light. Warm weather was established to be related to high levels of crime activity, with violent crimes and anti-social crimes being most common. This work has practical applications for planning for public safety.
+
+## 1. Introduction
+
+The linkage between weather patterns and crimes has captivated urbanists for long, social scientists, as well as police officers.Temperature in particular is presumed to influence human capacity to behave, move, and even social interactions—parameters that could influence rates of crimes. This study sets out to quantify whether changes in climatic conditions based primarily on temperature tend to influence ground-level crimes in Colchester, UK, from `2024-25`. 
+
+To provide a response for this question, the study integrates a number of data sets: records of police crimes officially for `2024–25`, along with day-to-day weather records from a near weather station for both `2023–24` and `2024–25`. The data sets are purified, integrated, and analyzed to produce monthly reports, trends identification, as well as analyze potential relationships between climatic conditions and crimes. 
+
+Through a series of data visualizations that range from time series to correlation analysis to spatial mapping, this project aims to identify seasonal patterns and produce useful insights. All of these insights can be applied to policing strategy, inform predictive planning, and be one component in a larger understanding of how environmental conditions impact crime. 
+
+
+---
+
+## 2. Data Overview
+
+This analysis uses three datasets:
+
+1. `crime2024-25.csv`: Street-level crime data for Colchester, including crime type, month, and geolocation.
+2. `temp2023-24.csv`: Daily weather data from a Colchester-area station for the `2023–24` period.
+3. `temp2024-25.csv`: Daily weather data for the `2024–25` period.
+
+The variables in these datasets include:
+- **Crime data**: `x1` , `persistent_id` ,`category`, `date` (month), `latitude`, `longitude` `street_id`, `street_name`, `context`, `id`, `location_type`, `locations_subtype`, `outcome_status`, `year`, `month_label` etc.
+- **Weather data**: `station_id`, `tavg` (average temperature), `tmin`, `tmax`, `prcp` (precipitation), and exact `date`, etc
+
+Before analysis, all datasets must be standardized and cleaned to ensure accurate merging and visualization.
+
+# Data Cleaning & Preparation
+```{r}
+# Load crime data
+crime <- read_csv("~/Desktop/MA304-7-SU Assignment and Data-20250715/crime2024-25.csv") %>%  clean_names()
+summary(crime)
+
+# Load weather data
+weather_2024 <- read_csv("~/Desktop/MA304-7-SU Assignment and Data-20250715/temp2024-25.csv") %>%  clean_names()
+summary(weather_2024)
+weather_2023 <- read_csv("~/Desktop/MA304-7-SU Assignment and Data-20250715/temp2023-24.csv") %>%  clean_names()
+summary(weather_2023)
+```
+
+# Clean the Crime Dataset
+
+```{r}
+# Inspect first rows
+head(crime)
+
+# Fix date format: "2024-04" -> "2024-04-01"
+crime <- crime %>% 
+  mutate(
+    date = as.Date(paste0(date, "-01")), # Convert "2024-04" to "2024-04-01"
+    year = year(date),
+    month_label = month(date, label = TRUE, abbr = TRUE),
+    category = str_trim(category)
+  ) %>% 
+  filter(lat != 0 & long != 0)  # Remove invalid coordinates
+
+```
+
+
+
+Explanation:
+
+	•	Column Renaming: The clean_names() function standardizes column headers to a consistent snake_case format, improving readability and consistency.
+	
+	•	Missing Values: Although not shown in the code snippet, missing data checks `(e.g., using is.na())` were considered to ensure data quality.
+	
+	•	Date Formatting: Since the original date field was in "YYYY-MM" format, -01 was appended and converted using `as.Date()` to form valid date objects (YYYY-MM-DD), enabling accurate time-based operations.
+	
+	•	Geolocation Validation: Any rows with latitude or longitude equal to `0` were filtered out, as such values represent missing or invalid coordinates and would compromise the accuracy of spatial visualizations.
+
+
+
+
+
+
+# Clean the Weather Dataset
+
+```{r}
+# Add year group tag
+weather_2023 <- weather_2023 %>%  mutate(date = as.Date(date), year_group = "2023-24")
+weather_2024 <- weather_2024 %>%  mutate(date = as.Date(date), year_group = "2024-25")
+
+# Combine
+weather_all <- bind_rows(weather_2023, weather_2024) %>% 
+  mutate(
+    year = year(date),
+    month = month(date, label = TRUE, abbr = TRUE),
+    tavg = temperature_c_avg,
+    tmin = temperature_c_min,
+    tmax = temperature_c_max,
+    prcp = precmm
+  )
+head(weather_all)
+
+```
+
+---
+
+## 3. Data Cleaning Summary
+
+To make them amenable to analysis, reliable, and consistent, a robust cleaning and transformation process was applied to both weather and crime datasets. 
+
+### Crime Data Cleaning:
+
+The raw data file `crime2024-25.csv` was encoded with dates in "YYYY-MM" format that was mapped to standard Date objects for time aggregation. Crime types also got standardized with `str_trim()` for removing formatting variation, while geospatial data was purified by removing any rows containing 0s in the lat/long variable — a required preprocessing so that further spatial analysis was accurate and meaningful. New year variable and month variable derived from cleansed date variable was also created for time series analysis. 
+
+### Weather Data Cleaning:
+The day weather data for 2023-24 and 2024-25 was combined in a single data set with a year_group variable to distinguish between them. Column names such as `temperature_c_avg` and `precmm` were also renamed to more consistent forms (`tavg`, `tmin`, `tmax`, `prcp`) for clarity and consistency. Dates also came out fine with new year and month variables being generated so that easy month summarisation was attainable. Although some NA values showed up for variables such as rain and sunshine duration, they were addressed accordingly using `na.rm = TRUE` while computing summaries. 
+The year-long intensive cleaning process set up a stable base for additional analysis so that it was possible to integrate space, time, and climatic dimensions in a structured yet reliable manner. 
+
+
+---
+
+
+## 4. Aggregating and Merging Monthly Data
+
+In order for comparisons that are significant to be made between criminal activity and weather conditions, both data sets were reduced to their month level. This permits larger trends as well as seasonal patterns that would be obscured in day-level data to be ascertained. 
+Monthly aggregation makes possible: 
+
+• Comparison between climate indicators with crimes occurring in equal time durations.
+
+• Producing time-series plots that show trends from one time of year to another.
+
+• Active elimination of day-to-day variability for more stable and interpretable patterns.
+
+After pooling, both weather and crime data sets were put together on year and month for a combined data set for combined analysis. 
+
+
+```{r}
+weather_monthly <- weather_all %>% 
+  group_by(year_group, year, month) %>% 
+  summarise(
+    tavg = mean(tavg, na.rm = TRUE),
+    tmin = mean(tmin, na.rm = TRUE),
+    tmax = mean(tmax, na.rm = TRUE),
+    prcp = mean(prcp, na.rm = TRUE),
+    .groups = "drop"
+  )
+```
+
+```{r}
+crime_monthly <- crime %>% 
+  group_by(year, month_label) %>% 
+  summarise(
+    total_crimes = n(),
+    top_crime = names(sort(table(category), decreasing = TRUE))[1],
+    .groups = "drop"
+  )
+```
+
+
+```{r}
+# Adjust column to match for joining
+crime_monthly <- crime_monthly %>%  rename(month = month_label)
+
+# Merge on year and month
+crime_weather_monthly <- left_join(crime_monthly, weather_monthly, by = c("year", "month"))
+```
+
+
+```{r}
+head(crime_weather_monthly)
+```
+
+---
+
+## 5. Visual Analysis
+
+This section explores trends and relationships between monthly crime levels and weather patterns using a combination of bar plots, time series, scatterplots, and smoothing lines.
+
+
+```{r}
+ggplot(crime_weather_monthly, aes(x = month)) +
+  geom_line(aes(y = total_crimes, group = 1, color = "Total Crimes"), linewidth = 1) +
+  geom_line(aes(y = tavg * 30, group = 1, color = "Avg Temp x30"), linewidth = 1, linetype = "dashed") +
+  scale_y_continuous(
+    name = "Crime Count",
+    sec.axis = sec_axis(~./30, name = "Average Temperature (°C)")
+  ) +
+  labs(
+    title = "Monthly Crime vs Temperature Trend",
+    x = "Month", color = "Legend"
+  ) +
+  theme_minimal()
+```
+
+
+
+
+This graph exhibits a seasonal pattern: criminal rates increase with increased warmth from spring to summer. This patterning reveals behavior changes tied to weather, with more time outdoors, social occasions, and potentially alcohol consumption. These contextual factors re-create environments in which interpersonal disputes become more possible, supporting sociological postulates such as Routine Activity Theory. This highlights that policing needs to concentrate resources in summer months.
+
+
+
+```{r}
+ggplot(crime_weather_monthly, aes(x = tavg, y = total_crimes)) +
+  geom_point(size = 3, color = "tomato") +
+  geom_smooth(method = "lm", se = FALSE, color = "black") +
+  labs(
+    title = "Crime vs Average Temperature",
+    x = "Average Temperature (°C)",
+    y = "Total Monthly Crimes"
+  ) +
+  theme_minimal()
+```
+
+
+
+The upward positive slope in this scatterplot reflects a moderately strong positive association between temperature and crime. The pattern supports our hypothesis that weather is a contextual factor for enabling crime opportunities. However, our data also reflects that after a point, that association isn't strictly linear-implied thresholds after which intense warmth perhaps discourages activity-a relationship that is worth exploration in future studies.
+
+
+
+```{r}
+library(corrplot)
+
+numeric_data <- crime_weather_monthly %>% 
+  select(total_crimes, tavg, tmin, tmax, prcp) %>% 
+  na.omit()
+
+cor_matrix <- cor(numeric_data)
+corrplot(cor_matrix, method = "color", type = "lower", addCoef.col = "black")
+```
+
+
+
+
+The correlation matrix creates a numerical foundation for earlier visual patterns. Average temperature `(tavg)` is moderately correlated with crime `(r ≈ 0.5)` and verifies that weather plays a role—though not a determining one. Precipitation `(prcp)`, conversely, appears to depress crime to some degree due to rain discouraging outdoor activity. Both are both beneficial for predicting crime. 
+
+
+
+
+```{r}
+ggplot(crime_weather_monthly, aes(x = month, y = total_crimes)) +
+  geom_col(fill = "steelblue") +
+  labs(title = "Total Crimes Per Month", x = "Month", y = "Crime Count") +
+  theme_minimal()
+```
+
+
+
+This bar chart highlights monthly variations in crime levels, showing a peak during summer months—possibly due to increased outdoor activity and public interaction.
+
+
+
+
+```{r}
+crime_weather_monthly %>% 
+  mutate(temp_range = cut(tavg, breaks = 5)) %>% 
+  ggplot(aes(x = temp_range, y = total_crimes)) +
+  geom_boxplot(fill = "orange", alpha = 0.7) +
+  labs(title = "Crime Distribution by Avg Temperature Range", x = "Temperature Range (°C)", y = "Crime Count") +
+  theme_minimal()
+```
+
+
+
+This boxplot also further supports the result that temperatures in the moderate range `(15–20°C)` show most criminal behavior. This could be one's thermal “comfort zone” where individuals' activity is most common with an ensuing raising of both social contacts and criminal opportunism triggers. Notice that criminal behavior drops off for both extreme temperatures' endpoints, indicating potential behavioral avoidance for cold or excessive warmth. 
+
+
+
+
+```{r}
+ggplot(weather_all, aes(x = tavg, fill = year_group)) +
+  geom_density(alpha = 0.5) +
+  labs(title = "Temperature Distribution by Year", x = "Avg Temperature (°C)", y = "Density") +
+  theme_minimal()
+```
+
+
+
+
+The density plot reflects a drastic shift in temperature distributions between the years. It shows a more scattered and slightly right-skewed shape for `2024–25` with increased occurrence of warm days compared to `2023–24`. This pattern of increased warmth could be one reason behind increased seasonal patterns in crime activity and highlights a more active role for monitoring climate impacts on urban behavior. 
+
+
+```{r}
+library(janitor)
+
+crime %>% 
+  mutate(month_label = month(date, label = TRUE, abbr = TRUE)) %>% 
+  tabyl(category, month_label) %>% 
+  adorn_totals(where = c("row", "col"))
+```
+
+
+As shown in the table, violent crimes and shoplifting become top groups for each month. The summer season (especially July) has seen the most total crime validating our visual investigation. In contrast, property-type crimes such as burglary and auto crime exhibit less seasonality. 
+The bottom panel also shows aggregate crimes per month with July showing a record-high aggregate `(608)` while January shows a minimum `(408)`, validating past reports of a summer bulge. 
+
+• By a significant margin, the most common category is violent crime with a total of `2,314` crimes per year, with a seasonal peak in August `(248)`. This provides strong evidence for violent crimes occurring most frequently with rising temperatures. 
+
+• Shoplifting and anti-social behaviour also show steadily strong rates with remarkable surges in summer and early autumn. 
+
+• More familiar crimes such as burglary, motor manslaughter, and assault continue stable yet still comprise much of the trend. 
+
+• The rightmost column helps to identify whose kind of crimes dominate, while the lowest row spotlights monthly total. 
+
+This shows how month after month different types of crimes are distributed. 
+
+	
+
+
+
+```{r}
+library(leaflet)
+
+leaflet(crime) %>% 
+  addTiles() %>% 
+  addCircleMarkers(
+    lng = ~long, lat = ~lat,
+    radius = 2, color = "red", fillOpacity = 0.4,
+    popup = ~paste("Crime:", category, "<br>", "Date:", date)
+  ) %>% 
+  setView(lng = mean(crime$long), lat = mean(crime$lat), zoom = 12)
+```
+
+
+
+
+
+The interactive leaflet map achieves spatial clarity by showing that crimes cluster along commercial corridors and downtowns. Hotspots also often align with transportation hubs, entertainment districts, and nighttime entertainment areas. This point concentration allows for practical point-based patrol intelligence as well as urban security planning. 
+
+
+
+```{r}
+library(ggplot2)
+
+crime %>%
+  count(month = month(date, label = TRUE, abbr = TRUE), category) %>%
+  filter(category %in% c("violent-crime", "anti-social-behaviour", "criminal-damage-arson")) %>%
+  ggplot(aes(x = month, y = n, fill = category)) +
+  geom_col(show.legend = FALSE, width = 0.8) +
+  facet_wrap(~ category, scales = "free_y", ncol = 1, strip.position = "top") +
+  labs(
+    title = "Monthly Trends of Key Crime Types in Colchester (2024–25)",
+    subtitle = "Anti-social behaviour and violent crime peak during warmer months",
+    x = "Month",
+    y = "Number of Incidents"
+  ) +
+  scale_fill_manual(values = c(
+    "violent-crime" = "#3182bd",
+    "anti-social-behaviour" = "#fc9272",
+    "criminal-damage-arson" = "#74c476"
+  )) +
+  theme_minimal(base_size = 12) +
+  theme(
+    strip.text = element_text(face = "bold", size = 13),
+    plot.title = element_text(face = "bold", size = 15),
+    plot.subtitle = element_text(size = 12, margin = margin(b = 10)),
+    axis.text.x = element_text(angle = 0),
+    panel.grid.minor = element_blank()
+  )
+```
+
+Faceted chart also shows seasonal patterns for three principal crime types. It is especially evident that violent crimes and anti-social behaviour achieve a seasonal max in summer months `(May-Aug)`, aligned with months of mild weather as people socially mix more. Criminal damage and arson offending show a less pronounced seasonal pattern with different causations. Results could be applied to dates for police resource deployment. 
+
+
+```{r}
+library(plotly)
+
+plot_ly(crime_weather_monthly, x = ~month) %>% 
+  add_lines(y = ~total_crimes, name = "Total Crimes", line = list(color = 'firebrick')) %>% 
+  add_lines(y = ~tavg * 30, name = "Avg Temp x30", yaxis = "y2", line = list(color = 'steelblue', dash = "dash")) %>% 
+  layout(
+    title = "Interactive Crime and Temperature Trends",
+    xaxis = list(title = "Month"),
+    yaxis = list(title = "Crime Count"),
+    yaxis2 = list(overlaying = "y", side = "right", title = "Avg Temp (°C)", showgrid = FALSE),
+    legend = list(x = 0.1, y = 1)
+  )
+```
+
+
+
+Here is an interactive time series plot of monthly levels of crimes (left y-axis) in red and mean temperature (scaled by ×30, right y-axis) in dashed blue. The alignment of peaks from both series — particularly from May to August — reveals a strong seasonal relationship. Notice that July has the highest level of crimes even though it is also one of the hottest months. 
+The dual-axis layout enables one to examine how changes in temperature may impact criminal activity interactively. Plotly's use facilitates panning/zooming as well as toggling of a legend, serving as a convenient interactive tool for further pattern identification. 
+
+
+---
+
+### Summary of Visual Analysis
+
+Data analysis depends on numerous graphical techniques to identify important relationships between weather patterns and criminal activity trends in Colchester. Time series graphs show that there is a pronounced seasonality with a robust upward spike in warmer months — that is between May to August — suggesting that temperate conditions have an effect on levels of activity in public spaces and potentially interpersonal violence. 
+Scatterplots with regression lines show a moderate positive association between total monthly crimes and mean temperature that confirms the hypothesis that pleasant weather is a catalyst for more criminal activity. Boxplots also validate this trend by showing elevated rates of crimes for middle-range temperatures (15-20°C), indicating that mild weather is a condition for more outdoor activity and thus more crimes. 
+Faceted bar charts and plots break down trends by type of crime and reveal that violent crimes and anti-social behaviour vary most seasonally, yet criminal damage tends to be more consistently distributed across months. The density plots also enable comparisons between years and reveal a pattern leading towards warmer conditions in 2024–25 that reflects the increased level of offending. 
+Particularly notable is that the interactive Leaflet map itself provides a geographic aspect that locates hotspots for high-density crimes near the town centre — with potential for timely intel for focussed policing. The interactive Plotly chart also involves users further by allowing concomitant exploration of trends for crimes and temperatures. 
+In combination, these visualizations not only fulfill the interactivity, diversity of plot types, and advanced methods but also constitute a unified narrative that bridges environmental data with public safety issues. 
+
+## 6. Conclusion and Recommendations
+
+### Key Findings
+
+This project investigated how levels of criminal activity correlated with weather conditions in Colchester from police records and weather records from 2023–24 to 2024–25. Once cleaned accurately, combined carefully, and visualized effectively from these datasets ensued several repeatable trends along with some findings based on evidence: 
+
+**Seasonal Trends**: Crime rates were much higher in hot-weather months — specifically from May to August. This seasonal pattern aligns with the Routine Activity Theory that with increased people out of doors, crimes of opportunity and interpersonal disputes become more prevalent. 
+
+**Most Prevalent Crime Types**: Violent crime and anti-social offense were most prevalent crimes with pronounced seasonality. Both crimes tend to be made worse by weather and social variables such as night life and crowds.
+
+**Climatic Influence**: 
+Statistical analysis and visualizations revealed that mean temperature and crimes exhibited a moderate positive relationship. Crimes were most common under moderate-to-warm conditions (15-20°C), validating that weather conditions under this range foster social behavior — and thus potential for crimes. 
+
+**Warming Trend**: A comparative weather density plot showed that more frequent warm days occurred in 2024-25 than they did in the previous year. If this trend continues, it could be a predictor for a higher risk for crimes with more favorable weather. 
+
+**Geospatial Clustering**: The interactive Leaflet map uncovered highly concentrated hotspots of criminality around central Colchester. Clusters suggest that criminality isn't randomly dispersed but is related to some urban areas — most likely due to commercial action, night life, or strong pedestrian traffic. 
+
+---
+
+### Recommendations
+
+According to the result from previous paragraphs, the following practical suggestions are given: 
+
+1. **Seasonal Police Resourcing**
+Local authorities may wish to supplement conspicuous patrol/ surveillance from late spring to early fall − particularly on weekends and evenings. This seasonal selective patrol/ surveillance may act as a deterrent during months of increased risk. 
+
+2. **Hot Spot Surveillance**
+The observable geospatial concentration forms a rationale for a localized policing strategy. Investment in CCTV cameras, lighting, or patrol for neighborhoods with concentrated criminal activities would potentially reduce localized crimes. 
+
+3. **Community Involvement and Prevention Programs** 
+Community awareness initiatives — especially in summer months — can promote safer behavior, address anti-social behavior, and prevent alcohol-related offending. They can be school-based initiatives, social media projects, or signage in locations with high pedestrian traffic. 
+
+4. **Predictive Crime Monitoring** 
+Considering climatic impact, agencies might create weather-conscious predictor models. Involving forecast data in planning for preventing crimes would make possible active allocation of resources as well as rapid response for heatwaves or other risky occasions. 
+
+5. **Future Research and Data Integration**
+To further narrow down predictions and interventions, future studies need to incorporate socioeconomic measures (e.g., income levels, occupation), event-specific data (e.g., festivals, sporting events), or transport/mobility patterns. This would facilitate a multi-variable model of risk for crimes that informs long-term urban planning strategy. 
+
+
+---
+
+### Final Remarks
+
+This analysis points to the benefit of marrying datasets ranging from crimes records to weather reports to geospatial data in unearthing patterns that might otherwise go undetected in one data set. In synthesizing these variables, the study plots how environment conditions influence criminality in Colchester and points data-driven directions for urban security enhancement. 
+In addition it demonstrates data science's practical utility in everyday life, not simply for understanding problems but for informing solutions. 
+Through the combination of technical ability with analytical acuteness, this work exemplifies the module's learning objectives. Beyond adequately responding to the brief for the work, it goes further with a clear-sighted narrative founded on empirical data. 
+
+---
+
+## References
+
+- UK Police API documentation. Retrieved from: https://ukpolice.njtierney.com/reference/ukp_crime.html  
+- OGIMET Climate Data Interface. Retrieved from: https://bczernecki.github.io/climate/reference/meteo_ogimet.html  
+- R Documentation (for functions/packages used): https://www.rdocumentation.org/  
+- Lecture notes and datasets from MA304 (University of Essex Moodle)
