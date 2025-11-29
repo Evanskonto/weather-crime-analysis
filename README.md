@@ -57,3 +57,26 @@ combined_timeseries.png
 ```r
 install.packages(c("tidyverse", "ggplot2", "lubridate"))
 rmarkdown::render("notebooks/weather_crime_analysis.Rmd")
+---
+```
+##  Requirements
+
+tidyverse
+ggplot2
+lubridate
+readr
+
+---
+
+##  Dataset Notice
+The full datasets are not included due to restrictions.  
+
+
+These allow users to understand structure & transformations.
+
+---
+
+##  Author
+
+**Evangelos Kontokostas**  
+ 
